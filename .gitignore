@@ -1,0 +1,17 @@
+# Local dev / test DB
+local_db/
+*.db
+*.db-shm
+*.db-wal
+
+# Monthly archives
+archive/*.xlsx
+archive/__pycache__/
+
+# Env / secrets
+.env
+
+# Go build artifacts
+postobot
+first-max-bot
+*.exe
