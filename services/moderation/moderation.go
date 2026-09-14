@@ -28,21 +28,46 @@ type Result struct {
 // Check normalizes text and runs both filters.
 func (m *Moderation) Check(text string) Result {
 	normalized := Normalize(text)
-
-	hasMat := false
 	lower := strings.ToLower(normalized)
-	for _, w := range m.matWords {
-		if strings.Contains(lower, w) {
-			hasMat = true
-			break
-		}
-	}
+
+	hasMat := m.hasMat(lower)
 
 	return Result{
 		Clean:  !hasMat,
 		HasMat: hasMat,
 		Text:   normalized,
 	}
+}
+
+// hasMat reports profanity using exact matches and evasion-resistant checks:
+// the word is also compared against a letter-collapsed form of the text, so
+// "бляяядь" / "бялдь"-style stretching is still caught.
+func (m *Moderation) hasMat(lower string) bool {
+	if lower == "" {
+		return false
+	}
+	collapsed := collapse(lower)
+	for _, w := range m.matWords {
+		w = collapse(w)
+		if strings.Contains(lower, w) || strings.Contains(collapsed, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// collapse removes adjacent duplicate runes ("бляяядь" -> "блядь").
+func collapse(s string) string {
+	var b strings.Builder
+	var prev rune
+	for i, r := range s {
+		if i > 0 && r == prev {
+			continue
+		}
+		b.WriteRune(r)
+		prev = r
+	}
+	return b.String()
 }
 
 // Normalize strips punctuation, collapses whitespace and lowercases a text.

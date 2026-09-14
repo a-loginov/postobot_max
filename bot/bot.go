@@ -254,6 +254,13 @@ func (b *Bot) studentMessage(ctx context.Context, userID int64, chatID int64, te
 
 	s := b.getSession(userID)
 
+	// Profanity guard on every free-text input, no matter the wizard step.
+	if text != "" && b.moderation.Check(text).HasMat {
+		b.reply(ctx, userID, chatID,
+			"В сообщении нецензурные выражения. Перепиши, пожалуйста, без мата 🙏")
+		return
+	}
+
 	// Any free text from an idle student that mentions a month is treated as an archive query.
 	if s.state == stateIdle && text != "" && monthHint(text) != "" {
 		b.archiveQuery(ctx, userID, student, text)
