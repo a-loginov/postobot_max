@@ -61,6 +61,10 @@ func (b *Bot) handleAdminCallback(ctx context.Context, userID int64, callbackID,
 		b.answerCallback(ctx, callbackID, "Стадия обновлена ✔")
 		b.changeStage(ctx, userID, strings.TrimPrefix(arg, "stage:"))
 
+	case "review":
+		b.answerCallback(ctx, callbackID, "Заявки на бета-тест")
+		b.reviewList(ctx, userID)
+
 	case "testers":
 		b.answerCallback(ctx, callbackID, "Список тестировщиков")
 		b.listTesters(ctx, userID)
@@ -74,6 +78,10 @@ func (b *Bot) handleAdminCallback(ctx context.Context, userID int64, callbackID,
 		b.answerCallback(ctx, callbackID, "Выход из панели администратора.")
 
 	default:
+		if id, verdict := parseReviewArg(arg); id != 0 {
+			b.reviewAction(ctx, userID, callbackID, id, verdict)
+			return true
+		}
 		return false
 	}
 
@@ -92,10 +100,11 @@ func (b *Bot) sendAdminPanel(ctx context.Context, userID int64) {
 	r1.AddCallback(fmt.Sprintf("🚀 Стадия: %s", stageLabel(stage)), schemes.DEFAULT, "adm:stage")
 
 	r2 := kb.AddRow()
+	r2.AddCallback("📋 Заявки на бета", schemes.DEFAULT, "adm:review")
 	r2.AddCallback("🧪 Тестировщики", schemes.DEFAULT, "adm:testers")
-	r2.AddCallback("📊 Статистика", schemes.DEFAULT, "adm:stats")
 
 	r3 := kb.AddRow()
+	r3.AddCallback("📊 Статистика", schemes.DEFAULT, "adm:stats")
 	r3.AddCallback("🔚 Выйти", schemes.DEFAULT, "adm:close")
 
 	b.replyKeyboard(ctx, userID, 0, "👨‍💻 Панель администратора", kb)
@@ -150,6 +159,90 @@ func (b *Bot) sendStats(ctx context.Context, userID int64) {
 			"— отклонено: %d\n"+
 			"Тестировщики: %d",
 		s.Students, s.Requests, s.ActiveRequests, s.DoneRequests, s.RejectedRequests, s.BetaTesters))
+}
+
+// --- review of beta applications ---
+
+// parseReviewArg parses an application-review callback arg like "review:ok:4"
+// into the application id and the target status.
+func parseReviewArg(arg string) (uint, string) {
+	parts := strings.SplitN(arg, ":", 3)
+	if len(parts) != 3 || parts[0] != "review" {
+		return 0, ""
+	}
+	var verdict string
+	switch parts[1] {
+	case "ok":
+		verdict = db.BetaStatusApproved
+	case "no":
+		verdict = db.BetaStatusRejected
+	default:
+		return 0, ""
+	}
+	id := parseID(parts[2])
+	if id == 0 {
+		return 0, ""
+	}
+	return id, verdict
+}
+
+// reviewList shows all pending beta applications with approve/reject buttons.
+func (b *Bot) reviewList(ctx context.Context, userID int64) {
+	apps, err := b.database.PendingBetaApplications(ctx)
+	if err != nil {
+		log.Printf("PendingBetaApplications: %v", err)
+		b.reply(ctx, userID, 0, "Не удалось загрузить заявки.")
+		return
+	}
+
+	if len(apps) == 0 {
+		b.reply(ctx, userID, 0, "Заявок на рассмотрении нет ✅")
+		return
+	}
+
+	b.reply(ctx, userID, 0, fmt.Sprintf("📋 Заявки на бета-тест (%d):\n", len(apps)))
+	for _, app := range apps {
+		kb := b.client.NewKeyboard()
+		row := kb.AddRow()
+		row.AddCallback("✅ Принять", schemes.DEFAULT, fmt.Sprintf("adm:review:ok:%d", app.ID))
+		row.AddCallback("❌ Отклонить", schemes.DEFAULT, fmt.Sprintf("adm:review:no:%d", app.ID))
+
+		b.replyKeyboard(ctx, userID, 0, fmt.Sprintf(
+			"№%d · %s %s (класс %s)\nid=%d\n\nПочему: %s",
+			app.ID, app.Name, app.Surname, app.Class, app.MaxUserID, app.Reason), kb)
+	}
+}
+
+// reviewAction approves or rejects an application and notifies the student.
+func (b *Bot) reviewAction(ctx context.Context, userID int64, callbackID string, id uint, verdict string) {
+	app, err := b.database.GetBetaApplication(ctx, id)
+	if err != nil {
+		log.Printf("GetBetaApplication: %v", err)
+		b.answerCallback(ctx, callbackID, "Заявка не найдена")
+		return
+	}
+
+	if err := b.database.SetBetaApplicationStatus(ctx, id, verdict); err != nil {
+		log.Printf("SetBetaApplicationStatus: %v", err)
+		b.answerCallback(ctx, callbackID, "Не удалось обработать")
+		return
+	}
+
+	var note string
+	switch verdict {
+	case db.BetaStatusApproved:
+		if err := b.database.AddBetaTester(ctx, app.MaxUserID); err != nil {
+			log.Printf("AddBetaTester: %v", err)
+		}
+		b.answerCallback(ctx, callbackID, "Заявка принята")
+		note = "🎉 Ты принят в бета-тест! ПостоБот открыт тебе. Напиши /start, чтобы начать."
+	default:
+		b.answerCallback(ctx, callbackID, "Заявка отклонена")
+		note = "К сожалению, твоя заявка на бета-тест отклонена. Если хочешь, попробуй подать заявку ещё раз."
+	}
+
+	b.reply(ctx, app.MaxUserID, 0, note)
+	b.reviewList(ctx, userID)
 }
 
 // --- admin auth state ---

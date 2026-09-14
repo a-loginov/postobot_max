@@ -13,7 +13,7 @@ const SettingStage = "stage"
 // GetSetting returns a settings value or the provided fallback when unset.
 func (d *DB) GetSetting(ctx context.Context, key, fallback string) (string, error) {
 	var s Setting
-	err := d.WithContext(ctx).First(&s, key).Error
+	err := d.WithContext(ctx).Where("key = ?", key).First(&s).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return fallback, nil
 	}
@@ -25,7 +25,16 @@ func (d *DB) GetSetting(ctx context.Context, key, fallback string) (string, erro
 
 // SetSetting upserts a settings value.
 func (d *DB) SetSetting(ctx context.Context, key, value string) error {
-	return d.WithContext(ctx).Save(&Setting{Key: key, Value: value}).Error
+	var s Setting
+	err := d.WithContext(ctx).Where("key = ?", key).First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return d.WithContext(ctx).Create(&Setting{Key: key, Value: value}).Error
+	}
+	if err != nil {
+		return err
+	}
+	s.Value = value
+	return d.WithContext(ctx).Save(&s).Error
 }
 
 func (d *DB) IsBetaTester(ctx context.Context, maxUserID int64) (bool, error) {

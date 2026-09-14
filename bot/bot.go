@@ -256,6 +256,12 @@ func (b *Bot) studentMessage(ctx context.Context, userID int64, chatID int64, te
 		return
 	}
 
+	// Unknown slash-commands must not be stored as a complaint.
+	if text != "" && text[0] == '/' && text != "/start" {
+		b.reply(ctx, userID, chatID, "Неизвестная команда или нет доступа. Напиши текстом, что нужно починить.")
+		return
+	}
+
 	student, err := b.database.FindOrCreateStudent(ctx, userID)
 	if err != nil {
 		log.Printf("FindOrCreateStudent: %v", err)
