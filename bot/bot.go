@@ -26,6 +26,11 @@ const (
 	stateAwaitingClass       sessionState = "awaiting_class"
 	stateAwaitingPhoto       sessionState = "awaiting_photo"
 	stateAwaitingArchive     sessionState = "awaiting_archive"
+
+	stateBetaName    sessionState = "beta_name"
+	stateBetaSurname sessionState = "beta_surname"
+	stateBetaClass   sessionState = "beta_class"
+	stateBetaReason  sessionState = "beta_reason"
 )
 
 type session struct {
@@ -34,6 +39,7 @@ type session struct {
 	name        string
 	surname     string
 	class       string
+	reason      string
 }
 
 type Bot struct {
@@ -162,6 +168,10 @@ func (b *Bot) handleMessage(ctx context.Context, u *schemes.MessageCreatedUpdate
 	}
 
 	if !b.checkAccess(ctx, userID) {
+		if b.inBetaWizard(userID) {
+			b.betaWizardMessage(ctx, userID, chatID, text)
+			return
+		}
 		b.sendBetaGate(ctx, userID, chatID)
 		return
 	}

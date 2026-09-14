@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -44,6 +45,51 @@ func (d *DB) BetaTesters(ctx context.Context) ([]BetaTester, error) {
 		return nil, err
 	}
 	return testers, nil
+}
+
+// --- Beta applications ---
+
+func (d *DB) CreateBetaApplication(ctx context.Context, maxUserID int64, name, surname, class, reason string) error {
+	return d.WithContext(ctx).Create(&BetaApplication{
+		MaxUserID: maxUserID,
+		Name:      name,
+		Surname:   surname,
+		Class:     class,
+		Reason:    reason,
+		Status:    BetaStatusPending,
+	}).Error
+}
+
+func (d *DB) HasPendingBetaApplication(ctx context.Context, maxUserID int64) (bool, error) {
+	var count int64
+	err := d.WithContext(ctx).Model(&BetaApplication{}).
+		Where("max_user_id = ? AND status = ?", maxUserID, BetaStatusPending).
+		Count(&count).Error
+	return count > 0, err
+}
+
+func (d *DB) PendingBetaApplications(ctx context.Context) ([]BetaApplication, error) {
+	var apps []BetaApplication
+	if err := d.WithContext(ctx).
+		Where("status = ?", BetaStatusPending).
+		Order("created_at ASC").Find(&apps).Error; err != nil {
+		return nil, err
+	}
+	return apps, nil
+}
+
+func (d *DB) GetBetaApplication(ctx context.Context, id uint) (*BetaApplication, error) {
+	var app BetaApplication
+	if err := d.WithContext(ctx).First(&app, id).Error; err != nil {
+		return nil, err
+	}
+	return &app, nil
+}
+
+func (d *DB) SetBetaApplicationStatus(ctx context.Context, id uint, status string) error {
+	return d.WithContext(ctx).Model(&BetaApplication{}).
+		Where("id = ?", id).
+		Updates(map[string]any{"status": status, "reviewed_at": time.Now()}).Error
 }
 
 // Stats returns a quick overview for the admin panel.

@@ -15,6 +15,26 @@ type BetaTester struct {
 	AddedAt   time.Time `json:"added_at"`
 }
 
+// BetaApplication is a pending/processed request to join the private beta-testing.
+type BetaApplication struct {
+	ID         uint       `gorm:"primarykey" json:"id"`
+	MaxUserID  int64      `gorm:"index" json:"max_user_id"`
+	Name       string     `json:"name"`
+	Surname    string     `json:"surname"`
+	Class      string     `json:"class"`
+	Reason     string     `json:"reason"`
+	Status     string     `json:"status"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ReviewedAt *time.Time `json:"reviewed_at"`
+}
+
+// Beta application statuses.
+const (
+	BetaStatusPending  = "pending"
+	BetaStatusApproved = "approved"
+	BetaStatusRejected = "rejected"
+)
+
 type Student struct {
 	ID        uint      `gorm:"primarykey" json:"id"`
 	MaxUserID int64     `gorm:"uniqueIndex" json:"max_user_id"`
