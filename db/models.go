@@ -2,6 +2,19 @@ package db
 
 import "time"
 
+// Setting is a key-value store for bot settings editable from the admin panel.
+type Setting struct {
+	Key   string `gorm:"primaryKey"`
+	Value string
+}
+
+// BetaTester is a user admitted to the private beta-testing stage.
+type BetaTester struct {
+	ID        uint      `gorm:"primarykey" json:"id"`
+	MaxUserID int64     `gorm:"uniqueIndex" json:"max_user_id"`
+	AddedAt   time.Time `json:"added_at"`
+}
+
 type Student struct {
 	ID        uint      `gorm:"primarykey" json:"id"`
 	MaxUserID int64     `gorm:"uniqueIndex" json:"max_user_id"`

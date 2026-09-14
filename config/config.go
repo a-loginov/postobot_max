@@ -13,6 +13,9 @@ type Config struct {
 	DBPath             string
 	PostgresDSN        string
 	ResponsibleIDs     []int64
+	AdminIDs           []int64
+	AdminPassword      string
+	DefaultStage       string
 	ArchiveDir         string
 	MatWords           []string
 	CAFile             string
@@ -52,7 +55,31 @@ func Load() (*Config, error) {
 	}
 	cfg.ResponsibleIDs = ids
 
+	adminIDs, err := parseIDs(os.Getenv("ADMIN_IDS"))
+	if err != nil {
+		return nil, fmt.Errorf("ADMIN_IDS: %w", err)
+	}
+	cfg.AdminIDs = adminIDs
+
+	cfg.AdminPassword = os.Getenv("ADMIN_PASSWORD")
+	cfg.DefaultStage = envOr("BOT_STAGE", StageBeta)
+
 	return cfg, nil
+}
+
+// Stages the bot runs in.
+const (
+	StageBeta       = "beta"
+	StagePublicBeta = "public_beta"
+	StageFinal      = "final"
+)
+
+func ValidStage(s string) bool {
+	switch s {
+	case StageBeta, StagePublicBeta, StageFinal:
+		return true
+	}
+	return false
 }
 
 func parseIDs(raw string) ([]int64, error) {

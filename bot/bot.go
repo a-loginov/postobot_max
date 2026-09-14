@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -43,19 +44,27 @@ type Bot struct {
 
 	mu       sync.Mutex
 	sessions map[int64]*session
+
+	adminMu      sync.Mutex
+	adminPending map[int64]bool
+	adminAuth    map[int64]bool
 }
 
 func New(client *maxbot.Client, database *db.DB, cfg *config.Config) *Bot {
 	return &Bot{
-		client:     client,
-		database:   database,
-		config:     cfg,
-		moderation: moderation.New(cfg.MatWords),
-		sessions:   make(map[int64]*session),
+		client:       client,
+		database:     database,
+		config:       cfg,
+		moderation:   moderation.New(cfg.MatWords),
+		sessions:     make(map[int64]*session),
+		adminPending: make(map[int64]bool),
+		adminAuth:    make(map[int64]bool),
 	}
 }
 
-const menuText = "ПостоБот — заявки на замену или ремонт оборудования в школе."
+const menuText = "ПостоБот — заявки на замену или ремонт оборудования в школе 1409.\n\n" +
+	"Сообщи, что нужно заменить: бутылка воды, стул, монитор и всё остальное. " +
+	"Мы передадим заявку ответственному и уведомим тебя, когда будет выполнено."
 
 func (b *Bot) Run(ctx context.Context) {
 	go func() {
@@ -65,13 +74,71 @@ func (b *Bot) Run(ctx context.Context) {
 	}()
 
 	for upd := range b.client.GetUpdates(ctx) {
-		switch upd := upd.(type) {
-		case *schemes.MessageCreatedUpdate:
-			b.handleMessage(ctx, upd)
-		case *schemes.MessageCallbackUpdate:
-			b.handleCallback(ctx, upd)
+		b.safe("update", func() {
+			switch upd := upd.(type) {
+			case *schemes.MessageCreatedUpdate:
+				b.handleMessage(ctx, upd)
+			case *schemes.MessageCallbackUpdate:
+				b.handleCallback(ctx, upd)
+			}
+		})
+	}
+}
+
+// safe runs fn and recovers panics so a single bad update never kills the bot.
+func (b *Bot) safe(op string, fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[panic] %s: %v\n%s", op, r, debug.Stack())
+		}
+	}()
+	fn()
+}
+
+// currentStage returns the active launch stage from DB settings.
+func (b *Bot) currentStage(ctx context.Context) string {
+	stage, err := b.database.GetSetting(ctx, db.SettingStage, b.config.DefaultStage)
+	if err != nil {
+		log.Printf("GetSetting stage: %v", err)
+		return b.config.DefaultStage
+	}
+	if !config.ValidStage(stage) {
+		return b.config.DefaultStage
+	}
+	return stage
+}
+
+func (b *Bot) isPrivileged(userID int64) bool {
+	return b.isResponsible(userID) || b.isAdmin(userID)
+}
+
+func (b *Bot) isAdmin(userID int64) bool {
+	for _, id := range b.config.AdminIDs {
+		if id == userID {
+			return true
 		}
 	}
+	return false
+}
+
+// checkAccess applies the launch-stage gate for regular students.
+// It returns true when the user may use the bot.
+func (b *Bot) checkAccess(ctx context.Context, userID int64) bool {
+	if b.isPrivileged(userID) {
+		return true
+	}
+
+	switch b.currentStage(ctx) {
+	case config.StageBeta:
+		ok, err := b.database.IsBetaTester(ctx, userID)
+		if err != nil {
+			log.Printf("IsBetaTester: %v", err)
+		}
+		return ok
+	case config.StagePublicBeta, config.StageFinal:
+		return true
+	}
+	return true
 }
 
 // handleMessage processes a plain incoming message (text or with photo).
@@ -81,10 +148,21 @@ func (b *Bot) handleMessage(ctx context.Context, u *schemes.MessageCreatedUpdate
 	text := u.Message.Body.Text
 	photos := b.photoAttachments(u)
 
+	if b.isAdmin(userID) {
+		if b.handleAdminMessage(ctx, userID, chatID, text) {
+			return
+		}
+	}
+
 	if b.isResponsible(userID) {
 		if text != "" && text[0] == '/' {
 			b.adminCommand(ctx, userID, chatID, text)
 		}
+		return
+	}
+
+	if !b.checkAccess(ctx, userID) {
+		b.sendBetaGate(ctx, userID, chatID)
 		return
 	}
 
@@ -110,12 +188,28 @@ func (b *Bot) handleCallback(ctx context.Context, u *schemes.MessageCallbackUpda
 		return
 	}
 
+	// Admin panel callbacks first.
+	if b.isAdmin(userID) && b.handleAdminCallback(ctx, userID, callbackID, payload) {
+		return
+	}
+
 	// Callback for responsible person (done / reorder).
 	if b.isResponsible(userID) {
 		switch action {
 		case "done", "up", "down":
 			b.responsibleAction(ctx, userID, callbackID, action, arg)
 		}
+		return
+	}
+
+	// Beta application from the gate screen.
+	if action == "beta" && arg == "apply" {
+		b.applyBeta(ctx, userID)
+		return
+	}
+
+	if !b.checkAccess(ctx, userID) {
+		b.sendBetaGate(ctx, userID, 0)
 		return
 	}
 
@@ -206,6 +300,10 @@ func (b *Bot) studentMessage(ctx context.Context, userID int64, chatID int64, te
 	case stateAwaitingPhoto:
 		if len(photos) == 0 {
 			b.reply(ctx, userID, chatID, "Фото обязательно. Пришли фотографию проблемного предмета.")
+			return
+		}
+		if photos[0].Token == "" && photos[0].Url == "" {
+			b.reply(ctx, userID, chatID, "Не удалось получить фото. Пришли фотографию ещё раз.")
 			return
 		}
 		b.submitRequest(ctx, student, s, photos[0])

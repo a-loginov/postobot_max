@@ -42,5 +42,5 @@ func New(driver, path, dsn string) (*DB, error) {
 }
 
 func (d *DB) Migrate() error {
-	return d.AutoMigrate(&Student{}, &Request{})
+	return d.AutoMigrate(&Setting{}, &BetaTester{}, &Student{}, &Request{})
 }
