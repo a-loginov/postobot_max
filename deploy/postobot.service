@@ -1,0 +1,18 @@
+[Unit]
+Description=ПостоБот — бот заявок (Max messenger)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=postobot
+Group=postobot
+WorkingDirectory=/opt/postobot
+EnvironmentFile=-/opt/postobot/.env
+ExecStart=/opt/postobot/bin/postobot
+Restart=on-failure
+RestartSec=5
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=ПостоБот — запуск архива раз в месяц (1-го числа)
+
+[Timer]
+OnCalendar=*-*-1 00:05:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -42,14 +42,24 @@ def _dsn(db_driver: str) -> str:
     return path
 
 
+def _db_driver(raw: str) -> str:
+    if raw == "auto":
+        return "postgres" if os.environ.get("DATABASE_URL") else "sqlite"
+    return raw
+
+
 def _connect(db_driver: str):
+    if db_driver in ("auto",):
+        db_driver = _db_driver(db_driver)
     if db_driver == "postgres":
         import psycopg2
 
         return psycopg2.connect(_dsn(db_driver))
-    conn = sqlite3.connect(_dsn(db_driver))
-    conn.row_factory = sqlite3.Row
-    return conn
+    if db_driver == "sqlite":
+        conn = sqlite3.connect(_dsn(db_driver))
+        conn.row_factory = sqlite3.Row
+        return conn
+    raise SystemExit(f"unknown db driver: {db_driver}")
 
 
 def fetch_rows(conn, start_ts: str, end_ts: str):
@@ -111,13 +121,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Archive month requests to Excel")
     parser.add_argument("--year", type=int, default=None)
     parser.add_argument("--month", type=int, default=None)
-    parser.add_argument("--db-driver", choices=["sqlite", "postgres"], default="sqlite")
+    parser.add_argument("--last-month", action="store_true",
+                        help="archive the previous month (default when run by systemd timer)")
+    parser.add_argument("--db-driver", choices=["auto", "sqlite", "postgres"], default="auto")
     parser.add_argument("--dry-run", action="store_true", help="write Excel but keep DB rows")
     args = parser.parse_args()
 
     now = __import__("datetime").datetime.now()
-    year = args.year if args.year else now.year
-    month = args.month if args.month else now.month
+    if args.last_month:
+        if now.month == 1:
+            year, month = now.year - 1, 12
+        else:
+            year, month = now.year, now.month - 1
+    else:
+        year = args.year if args.year else now.year
+        month = args.month if args.month else now.month
 
     start = now.replace(year=year, month=month, day=1, hour=0, minute=0, second=0, microsecond=0)
     end = start.replace(month=start.month + 1) if start.month < 12 else start.replace(year=year + 1, month=1)

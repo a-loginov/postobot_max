@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
+	sqlite "github.com/glebarez/sqlite"
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )

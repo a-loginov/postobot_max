@@ -1,0 +1,11 @@
+[Unit]
+Description=ПостоБот — ежемесячный экспорт заявок в Excel
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=postobot
+Group=postobot
+WorkingDirectory=/opt/postobot
+EnvironmentFile=-/opt/postobot/.env
+ExecStart=/usr/bin/python3 /opt/postobot/archive/export_month.py --last-month
