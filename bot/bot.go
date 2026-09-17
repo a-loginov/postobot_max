@@ -61,7 +61,7 @@ func New(client *maxbot.Client, database *db.DB, cfg *config.Config) *Bot {
 		client:       client,
 		database:     database,
 		config:       cfg,
-		moderation:   moderation.New(cfg.MatWords),
+		moderation:   moderation.New(cfg.MatWords, cfg.SpamWords),
 		sessions:     make(map[int64]*session),
 		adminPending: make(map[int64]bool),
 		adminAuth:    make(map[int64]bool),
@@ -277,6 +277,13 @@ func (b *Bot) studentMessage(ctx context.Context, userID int64, chatID int64, te
 		return
 	}
 
+	// Spam-word guard.
+	if text != "" && b.moderation.Check(text).HasSpam {
+		b.reply(ctx, userID, chatID,
+			"Это сообщение распознано как спам. Если это ошибка — напиши иначе.")
+		return
+	}
+
 	// Any free text from an idle student that mentions a month is treated as an archive query.
 	if s.state == stateIdle && text != "" && monthHint(text) != "" {
 		b.archiveQuery(ctx, userID, student, text)
@@ -351,7 +358,7 @@ func (b *Bot) submitRequest(ctx context.Context, student *db.Student, s *session
 
 	result := b.moderation.Check(s.description)
 
-	// Auto-moderation: profanity and near-duplicates.
+	// Auto-moderation: profanity, spam and near-duplicates.
 	if result.HasMat {
 		req.Status = db.StatusRejected
 		req.RejectReason = "мат"
@@ -359,6 +366,16 @@ func (b *Bot) submitRequest(ctx context.Context, student *db.Student, s *session
 			log.Printf("CreateRequest rejected: %v", err)
 		}
 		b.reply(ctx, student.MaxUserID, 0, "Заявка отклонена: сообщение содержит недопустимые выражения. Перепиши по-нормальному.")
+		return
+	}
+
+	if result.HasSpam {
+		req.Status = db.StatusRejected
+		req.RejectReason = "спам"
+		if err := b.database.CreateRequest(ctx, req); err != nil {
+			log.Printf("CreateRequest rejected spam: %v", err)
+		}
+		b.reply(ctx, student.MaxUserID, 0, "Заявка отклонена: сообщение распознано как спам.")
 		return
 	}
 

@@ -41,7 +41,7 @@ func TestSimilarity(t *testing.T) {
 }
 
 func TestCheckMat(t *testing.T) {
-	m := New([]string{"хуй", "пизда"})
+	m := New([]string{"хуй", "пизда"}, nil)
 	res := m.Check("нужно заменить хуй")
 	if !res.HasMat {
 		t.Error("expected HasMat=true")
@@ -60,7 +60,7 @@ func TestCheckMat(t *testing.T) {
 }
 
 func TestCheckDuplicate(t *testing.T) {
-	m := New([]string{})
+	m := New([]string{}, nil)
 	res := m.Check("замени бутылку воды пожалуйста")
 	res2 := m.Check("замени бутылку воды, пожалуйста")
 	// After normalization these should be identical.
@@ -69,8 +69,27 @@ func TestCheckDuplicate(t *testing.T) {
 	}
 }
 
+func TestCheckSpam(t *testing.T) {
+	m := New(nil, []string{"melstroy", "черемша"})
+	res := m.Check("мне нужна черемша")
+	if !res.HasSpam {
+		t.Error("expected HasSpam=true")
+	}
+	if res.Clean {
+		t.Error("expected Clean=false")
+	}
+
+	res2 := m.Check("нужно заменить стул")
+	if res2.HasSpam {
+		t.Error("expected HasSpam=false for clean text")
+	}
+	if !res2.Clean {
+		t.Error("expected Clean=true")
+	}
+}
+
 func TestIsSimilar(t *testing.T) {
-	m := New([]string{})
+	m := New([]string{}, nil)
 	if !m.IsSimilar("замени бутылку воды пожалуйста", "замени бутылку воды") {
 		t.Error("expected similar")
 	}

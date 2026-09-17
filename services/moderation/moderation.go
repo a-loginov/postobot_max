@@ -5,15 +5,17 @@ import (
 	"unicode"
 )
 
-// Moderation automatically checks a new request for profanity and duplicates.
+// Moderation automatically checks a new request for profanity, spam and duplicates.
 type Moderation struct {
 	matWords     []string
+	spamWords    []string
 	simThreshold float64
 }
 
-func New(matWords []string) *Moderation {
+func New(matWords, spamWords []string) *Moderation {
 	return &Moderation{
 		matWords:     matWords,
+		spamWords:    spamWords,
 		simThreshold: 0.8,
 	}
 }
@@ -21,6 +23,7 @@ func New(matWords []string) *Moderation {
 type Result struct {
 	Clean     bool
 	HasMat    bool
+	HasSpam   bool
 	Duplicate bool
 	Text      string
 }
@@ -31,11 +34,13 @@ func (m *Moderation) Check(text string) Result {
 	lower := strings.ToLower(normalized)
 
 	hasMat := m.hasMat(lower)
+	hasSpam := m.hasSpam(lower)
 
 	return Result{
-		Clean:  !hasMat,
-		HasMat: hasMat,
-		Text:   normalized,
+		Clean:   !hasMat && !hasSpam,
+		HasMat:  hasMat,
+		HasSpam: hasSpam,
+		Text:    normalized,
 	}
 }
 
@@ -50,6 +55,22 @@ func (m *Moderation) hasMat(lower string) bool {
 	for _, w := range m.matWords {
 		w = collapse(w)
 		if strings.Contains(lower, w) || strings.Contains(collapsed, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasSpam reports whether the text contains any spam words.
+func (m *Moderation) hasSpam(lower string) bool {
+	if lower == "" {
+		return false
+	}
+	collapsed := collapse(lower)
+	for _, w := range m.spamWords {
+		w = strings.ToLower(w)
+		wc := collapse(w)
+		if strings.Contains(lower, w) || strings.Contains(collapsed, wc) {
 			return true
 		}
 	}

@@ -18,6 +18,7 @@ type Config struct {
 	DefaultStage       string
 	ArchiveDir         string
 	MatWords           []string
+	SpamWords          []string
 	CAFile             string
 	InsecureSkipVerify bool
 }
@@ -29,6 +30,7 @@ func Load() (*Config, error) {
 		PostgresDSN:        os.Getenv("DATABASE_URL"),
 		ArchiveDir:         envOr("ARCHIVE_DIR", "archive"),
 		MatWords:           splitCSV(envOr("MAT_WORDS", defaultMatWords)),
+		SpamWords:          splitCSV(os.Getenv("SPAM_WORD")),
 		CAFile:             os.Getenv("CA_CERT_FILE"),
 		InsecureSkipVerify: os.Getenv("INSECURE_SKIP_VERIFY") == "true",
 	}
