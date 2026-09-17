@@ -15,3 +15,10 @@ archive/__pycache__/
 postobot
 first-max-bot
 *.exe
+
+# Web cabinet
+html/uploads/
+html/.venv/
+html/__pycache__/
+html/uploads/*
+!html/uploads/.gitkeep

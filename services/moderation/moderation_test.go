@@ -96,4 +96,11 @@ func TestIsSimilar(t *testing.T) {
 	if m.IsSimilar("замени бутылку воды", "почини стул") {
 		t.Error("expected not similar")
 	}
+	// Short terse comments must never be treated as duplicates, even if identical.
+	if m.IsSimilar("тест", "тест") {
+		t.Error("expected short identical text NOT to be a duplicate")
+	}
+	if m.IsSimilar("стул", "стул") {
+		t.Error("expected short identical text NOT to be a duplicate")
+	}
 }

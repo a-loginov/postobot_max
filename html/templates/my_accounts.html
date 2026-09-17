@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+    <title>ПостоБот — мой кабинет</title>
+    <script src="https://st.max.ru/js/max-web-app.js"></script>
+    <style>
+        :root {
+            --bg: #f4f5f7;
+            --card: #ffffff;
+            --text: #12151c;
+            --muted: #7a8494;
+            --accent: #2f6fed;
+            --accent-soft: #e8f0ff;
+            --danger: #e5484d;
+            --danger-soft: #fdebec;
+            --ok: #30a46c;
+            --ok-soft: #e6f6ee;
+            --warn: #d97706;
+            --warn-soft: #fff3e0;
+            --border: #e4e7ec;
+            --radius: 14px;
+            --shadow: 0 1px 3px rgba(18,21,28,.08);
+        }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body { margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: var(--bg); color: var(--text);
+            padding-bottom: 76px;
+        }
+        .header {
+            position: sticky; top: 0; z-index: 10;
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 16px;
+            background: rgba(255,255,255,.92); backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+        }
+        .header .avatar {
+            width: 38px; height: 38px; border-radius: 50%;
+            background: var(--accent-soft); color: var(--accent);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 16px; overflow: hidden; flex: 0 0 auto;
+        }
+        .header .avatar img { width: 100%; height: 100%; object-fit: cover; }
+        .header .titles { flex: 1; min-width: 0; }
+        .header .titles .app { font-weight: 700; font-size: 15px; }
+        .header .titles .who { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .page { padding: 14px 16px; max-width: 480px; margin: 0 auto; }
+        .card {
+            background: var(--card); border-radius: var(--radius);
+            box-shadow: var(--shadow); padding: 14px; margin-bottom: 12px;
+        }
+        .card h2 { margin: 0 0 4px; font-size: 16px; }
+        .muted { color: var(--muted); font-size: 13px; }
+        .stat-row { display: flex; gap: 10px; margin: 4px 0 12px; }
+        .stat {
+            flex: 1; background: var(--card); border-radius: var(--radius);
+            box-shadow: var(--shadow); padding: 12px; text-align: center;
+        }
+        .stat .n { font-size: 22px; font-weight: 800; }
+        .stat .l { font-size: 11.5px; color: var(--muted); }
+
+        .req {
+            display: flex; gap: 12px; align-items: flex-start;
+            background: var(--card); border-radius: var(--radius);
+            box-shadow: var(--shadow); padding: 12px 14px; margin-bottom: 10px;
+        }
+        .req .num {
+            font-weight: 800; font-size: 15px; color: var(--accent);
+            background: var(--accent-soft); border-radius: 10px;
+            padding: 6px 9px; flex: 0 0 auto;
+        }
+        .req .body { flex: 1; min-width: 0; }
+        .req .desc { font-size: 14.5px; line-height: 1.35; word-wrap: break-word; }
+        .req .meta { margin-top: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .req .when { font-size: 12px; color: var(--muted); }
+        .req .pr { font-size: 12px; color: var(--muted); }
+        .chip {
+            display: inline-flex; align-items: center; gap: 4px;
+            font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+        }
+        .chip.active { background: var(--accent-soft); color: var(--accent); }
+        .chip.done { background: var(--ok-soft); color: var(--ok); }
+        .chip.rejected { background: var(--danger-soft); color: var(--danger); }
+        .chip.pending { background: var(--warn-soft); color: var(--warn); }
+        .reason { font-size: 12.5px; color: var(--danger); margin-top: 4px; }
+        .req .thumb { width: 52px; height: 52px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; }
+        .repeat-btn {
+            margin-top: 8px; font-size: 12.5px; color: var(--accent);
+            background: var(--accent-soft); border: none; border-radius: 8px;
+            padding: 6px 10px; cursor: pointer;
+        }
+        .repeat-btn:active { opacity: .7; }
+
+        .empty { text-align: center; color: var(--muted); padding: 36px 16px; }
+        .empty .big { font-size: 40px; margin-bottom: 8px; }
+        .empty button {
+            margin-top: 14px; background: var(--accent); color: #fff; border: none;
+            border-radius: 12px; padding: 12px 22px; font-size: 15px; font-weight: 600; cursor: pointer;
+        }
+
+        label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 5px; color: var(--muted); }
+        input[type=text], textarea {
+            width: 100%; border: 1.5px solid var(--border); border-radius: 12px;
+            padding: 12px; font-size: 15px; font-family: inherit; color: var(--text);
+            background: #fff; outline: none;
+        }
+        input[type=text]:focus, textarea:focus { border-color: var(--accent); }
+        textarea { min-height: 92px; resize: vertical; }
+        .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .chips button {
+            border: 1.5px solid var(--border); background: #fff; color: var(--text);
+            border-radius: 999px; padding: 8px 14px; font-size: 13.5px; cursor: pointer;
+        }
+        .chips button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+        .photo-wrap { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+        .photo-wrap .fake {
+            border: 1.5px dashed var(--border); border-radius: 10px; color: var(--muted);
+            padding: 9px 12px; font-size: 13px; background: #fff; cursor: pointer; flex: 1;
+        }
+        .photo-wrap img.preview { width: 54px; height: 54px; border-radius: 10px; object-fit: cover; }
+        .btn-primary {
+            width: 100%; background: var(--accent); color: #fff; border: none;
+            border-radius: 12px; padding: 14px; font-size: 15.5px; font-weight: 700; cursor: pointer;
+            margin-top: 14px;
+        }
+        .btn-primary:active { opacity: .85; }
+        .btn-primary:disabled { opacity: .5; cursor: default; }
+        .btn-secondary {
+            background: var(--accent-soft); color: var(--accent); border: none;
+            border-radius: 12px; padding: 13px; font-size: 15px; font-weight: 600; cursor: pointer; width: 100%;
+        }
+
+        .nav {
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+            display: flex; background: #fff; border-top: 1px solid var(--border);
+            padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+        }
+        .nav button {
+            flex: 1; background: none; border: none; cursor: pointer;
+            display: flex; flex-direction: column; align-items: center; gap: 2px;
+            padding: 6px 0; color: var(--muted); font-size: 10.5px;
+        }
+        .nav button .ic { font-size: 21px; line-height: 1; }
+        .nav button.active { color: var(--accent); font-weight: 600; }
+
+        .toast {
+            position: fixed; left: 50%; transform: translateX(-50%); bottom: 84px; z-index: 20;
+            background: #20242e; color: #fff; border-radius: 12px; padding: 11px 18px;
+            font-size: 14px; max-width: 90%; box-shadow: 0 6px 20px rgba(0,0,0,.25);
+            opacity: 0; transition: opacity .25s; pointer-events: none;
+        }
+        .toast.err { background: var(--danger); }
+        .toast.show { opacity: 1; }
+
+        .gate {
+            min-height: 100vh; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; text-align: center;
+            padding: 32px; gap: 6px;
+        }
+        .gate .logo { font-size: 54px; }
+        .gate h1 { margin: 0; font-size: 22px; }
+        .gate p { color: var(--muted); font-size: 14px; max-width: 320px; line-height: 1.5; }
+
+        .spin {
+            width: 34px; height: 34px; border: 3.5px solid var(--border);
+            border-top-color: var(--accent); border-radius: 50%;
+            margin: 40px auto; animation: rot .8s linear infinite;
+        }
+        @keyframes rot { to { transform: rotate(360deg); } }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<!-- Экран «откроется только внутри MAX» -->
+<div id="gate" class="gate hidden">
+    <div class="logo">🛠</div>
+    <h1>ПостоБот</h1>
+    <p>Кабинет заявок: посмотреть свои заявки, быстро создать новую и заполнить профиль.</p>
+    <p class="muted">Открой этот кабинет через кнопку в чате с ПостоБотом в мессенджере MAX.</p>
+</div>
+
+<!-- Основное приложение -->
+<div id="app" class="hidden">
+    <div class="header">
+        <div class="avatar"><span id="avatarLetter">?</span><img id="avatarImg" class="hidden" alt=""></div>
+        <div class="titles">
+            <div class="app">ПостоБот</div>
+            <div class="who" id="who"></div>
+        </div>
+    </div>
+
+    <div class="page">
+        <div id="loading"><div class="spin"></div></div>
+
+        <!-- Вкладка: Заявки -->
+        <section id="tabRequests" class="hidden">
+            <div class="stat-row">
+                <div class="stat"><div class="n" id="cWork">0</div><div class="l">в работе</div></div>
+                <div class="stat"><div class="n" id="cDone">0</div><div class="l">выполнено</div></div>
+                <div class="stat"><div class="n" id="cRej">0</div><div class="l">отклонено</div></div>
+            </div>
+            <div id="requestsList"></div>
+            <div id="requestsEmpty" class="empty hidden">
+                <div class="big">📭</div>
+                <div>Заявок пока нет.</div>
+                <button onclick="goTab('new')">Создать первую заявку</button>
+            </div>
+        </section>
+
+        <!-- Вкладка: Новая заявка -->
+        <section id="tabNew" class="hidden">
+            <div class="card">
+                <h2>Новая заявка</h2>
+                <p class="muted">Что нужно заменить или починить?</p>
+                <textarea id="txtDesc" placeholder="Например: сломался кран в туалете на третьем этаже…"></textarea>
+                <div class="chips" id="quickChips"></div>
+                <label>Фото (необязательно)</label>
+                <div class="photo-wrap">
+                    <input type="file" id="filePhoto" accept="image/*" class="hidden">
+                    <div class="fake" onclick="document.getElementById('filePhoto').click()">📷 Прикрепить фото</div>
+                    <img id="photoPreview" class="preview hidden" alt="">
+                </div>
+                <button class="btn-primary" id="btnSend" onclick="sendRequest()">Отправить заявку</button>
+            </div>
+        </section>
+
+        <!-- Вкладка: Профиль -->
+        <section id="tabProfile" class="hidden">
+            <div class="card">
+                <h2>Мой профиль</h2>
+                <p class="muted">Эти данные увидит ответственный сотрудник вместе с заявкой.</p>
+                <label>Имя</label>
+                <input type="text" id="pName" placeholder="Имя">
+                <label>Фамилия</label>
+                <input type="text" id="pSurname" placeholder="Фамилия">
+                <label>Класс</label>
+                <input type="text" id="pClass" placeholder="Например: 9А">
+                <button class="btn-primary" onclick="saveProfile()">Сохранить</button>
+                <div class="muted" style="margin-top:12px" id="pJoined"></div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<div class="nav hidden" id="nav">
+    <button data-tab="requests" class="active" onclick="goTab('requests')"><span class="ic">📋</span>Заявки</button>
+    <button data-tab="new" onclick="goTab('new')"><span class="ic">➕</span>Новая</button>
+    <button data-tab="profile" onclick="goTab('profile')"><span class="ic">👤</span>Профиль</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+    const QUICK = ["💧 Бутылка воды", "🪑 Стул", "🖥 Монитор", "💡 Лампочка", "🚰 Кран/раковина", "🚪 Дверь", "🪟 Окно", "🛋 Диван", "✏️ Другое…"];
+
+    const WebApp = window.WebApp;
+    let initData = "";
+    let initUser = {};
+    let me = {};
+
+    function ready() {
+        return new Promise(res => {
+            if (WebApp && WebApp.ready) { try { WebApp.ready(); } catch (e) {} }
+            res();
+        });
+    }
+
+    function haptic(type) {
+        if (!WebApp || !WebApp.HapticFeedback) return;
+        try { WebApp.HapticFeedback[type] && WebApp.HapticFeedback[type]("light"); } catch (e) {}
+    }
+
+    function showToast(text, isErr) {
+        const t = document.getElementById("toast");
+        t.textContent = text;
+        t.className = "toast" + (isErr ? " err" : "") + " show";
+        clearTimeout(showToast._t);
+        showToast._t = setTimeout(() => t.className = "toast", 2600);
+    }
+
+    async function api(path, opts) {
+        opts = opts || {};
+        opts.headers = Object.assign({ "X-Init-Data": initData }, opts.headers || {});
+        const res = await fetch(path, opts);
+        let data = null;
+        try { data = await res.json(); } catch (e) {}
+        if (!res.ok && res.status === 401) throw { code: 401 };
+        if (!res.ok) throw { code: res.status, msg: (data && data.error) || "Ошибка сервера" };
+        return data;
+    }
+
+    function statusLabel(s) {
+        switch (s) {
+            case "active": return "в работе";
+            case "done": return "✅ выполнено";
+            case "rejected": return "⛔ отклонена";
+            case "pending_moderation": return "на проверке";
+            default: return s;
+        }
+    }
+    function statusChip(s) {
+        let cls = "pending";
+        if (s === "active") cls = "active";
+        else if (s === "done") cls = "done";
+        else if (s === "rejected") cls = "rejected";
+        return `<span class="chip ${cls}">${statusLabel(s)}</span>`;
+    }
+    function fmtDate(iso) {
+        if (!iso) return "";
+        const d = new Date(iso);
+        if (isNaN(d)) return "";
+        return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    }
+
+    function goTab(name) {
+        haptic("selectionChanged");
+        ["requests", "new", "profile"].forEach(t => {
+            document.getElementById("tab" + (t[0].toUpperCase() + t.slice(1))).classList.toggle("hidden", t !== name);
+        });
+        document.querySelectorAll(".nav button").forEach(b => {
+            b.classList.toggle("active", b.dataset.tab === name);
+        });
+        if (name === "requests") loadRequests();
+        if (name === "profile") fillProfile();
+    }
+
+    async function loadRequests() {
+        try {
+            const data = await api("/api/requests");
+            renderRequests(data.requests || []);
+        } catch (e) {
+            if (e.code === 401) return showGate();
+            showToast(e.msg || "Не удалось загрузить заявки", true);
+        }
+    }
+
+    function renderRequests(list) {
+        const box = document.getElementById("requestsList");
+        const empty = document.getElementById("requestsEmpty");
+        let work = 0, done = 0, rej = 0;
+        list.forEach(r => {
+            if (r.status === "active") work++;
+            else if (r.status === "done") done++;
+            else if (r.status === "rejected") rej++;
+        });
+        document.getElementById("cWork").textContent = work;
+        document.getElementById("cDone").textContent = done;
+        document.getElementById("cRej").textContent = rej;
+        empty.classList.toggle("hidden", list.length > 0);
+
+        box.innerHTML = "";
+        if (!list.length) return;
+
+        list.forEach(r => {
+            const el = document.createElement("div");
+            el.className = "req";
+            const reason = r.status === "rejected" && r.reject_reason
+                ? `<div class="reason">Причина: ${r.reject_reason}</div>` : "";
+            const thumb = r.photo_url ? `<img class="thumb" src="${r.photo_url}" alt="">` : "";
+            const repeat = r.status === "active" || r.status === "done"
+                ? `<button class="repeat-btn" onclick='repeatRequest(${JSON.stringify(r.description)})'>➕ Повторить</button>` : "";
+            el.innerHTML = `
+                <div class="num">#${r.id}</div>
+                <div class="body">
+                    <div class="desc">${escapeHtml(r.description)}</div>
+                    <div class="meta">
+                        ${statusChip(r.status)}
+                        <span class="when">${fmtDate(r.created_at)}</span>
+                        ${r.priority ? `<span class="pr">⭐ приоритет ${r.priority}</span>` : ""}
+                    </div>
+                    ${reason}
+                    ${repeat}
+                </div>
+                ${thumb}`;
+            box.appendChild(el);
+        });
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+        }[c]));
+    }
+
+    function repeatRequest(desc) {
+        haptic("impactOccurred");
+        document.getElementById("txtDesc").value = desc;
+        document.getElementById("txtDesc").focus();
+        goTab("new");
+    }
+
+    async function sendRequest() {
+        const desc = document.getElementById("txtDesc").value.trim();
+        if (!desc) { showToast("Опиши, что нужно заменить", true); return; }
+        if (!me.name || !me.surname || !me.class) {
+            showToast("Сначала заполни профиль — так ответственный поймёт, кто просит", true);
+            goTab("profile");
+            return;
+        }
+        const btn = document.getElementById("btnSend");
+        btn.disabled = true; btn.textContent = "Отправляем…";
+        haptic("impactOccurred");
+        try {
+            const fd = new FormData();
+            fd.append("description", desc);
+            const file = document.getElementById("filePhoto").files[0];
+            if (file) fd.append("photo", file);
+            const data = await api("/api/requests", { method: "POST", body: fd });
+            if (data.ok) {
+                showToast(data.message);
+                document.getElementById("txtDesc").value = "";
+                document.getElementById("filePhoto").value = "";
+                document.getElementById("photoPreview").classList.add("hidden");
+                document.querySelectorAll(".chips button").forEach(b => b.classList.remove("active"));
+                goTab("requests");
+            } else {
+                showToast(data.message || "Заявка не принята", true);
+                goTab("requests");
+            }
+        } catch (e) {
+            if (e.code === 401) return showGate();
+            showToast(e.msg || "Не удалось отправить заявку", true);
+        } finally {
+            btn.disabled = false; btn.textContent = "Отправить заявку";
+        }
+    }
+
+    async function loadMe() {
+        const data = await api("/api/me");
+        me = data;
+        const letter = ((data.first_name || data.name || "?")[0] || "?").toUpperCase();
+        document.getElementById("avatarLetter").textContent = letter;
+        const ai = document.getElementById("avatarImg");
+        if (data.photo_url) {
+            ai.src = data.photo_url;
+            ai.classList.remove("hidden");
+            document.getElementById("avatarLetter").classList.add("hidden");
+        }
+        document.getElementById("who").textContent = [data.first_name || data.name, data.last_name || data.surname].filter(Boolean).join(" ") || "ученик";
+        return data;
+    }
+
+    function fillProfile() {
+        document.getElementById("pName").value = me.name || "";
+        document.getElementById("pSurname").value = me.surname || "";
+        document.getElementById("pClass").value = me.class || "";
+        document.getElementById("pJoined").textContent = me.created_at ? "В ПостоБоте с " + fmtDate(me.created_at) : "";
+    }
+
+    async function saveProfile() {
+        const name = document.getElementById("pName").value.trim();
+        const surname = document.getElementById("pSurname").value.trim();
+        const klass = document.getElementById("pClass").value.trim();
+        if (!name) { showToast("Имя не может быть пустым", true); return; }
+        try {
+            const data = await api("/api/me", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name, surname, class: klass })
+            });
+            me = Object.assign(me, data);
+            document.getElementById("who").textContent = [data.name, data.surname].filter(Boolean).join(" ") || "ученик";
+            showToast("Профиль сохранён");
+        } catch (e) {
+            if (e.code === 401) return showGate();
+            showToast(e.msg || "Не удалось сохранить", true);
+        }
+    }
+
+    function showGate() {
+        document.getElementById("app").classList.add("hidden");
+        document.getElementById("nav").classList.add("hidden");
+        document.getElementById("gate").classList.remove("hidden");
+    }
+
+    function boot() {
+        initData = (WebApp && WebApp.initData) ? WebApp.initData : "";
+        initUser = (WebApp && WebApp.initDataUnsafe && WebApp.initDataUnsafe.user) ? WebApp.initDataUnsafe.user : {};
+        if (!initData) { showGate(); return; }
+
+        document.getElementById("gate").classList.add("hidden");
+        document.getElementById("nav").classList.remove("hidden");
+        document.getElementById("app").classList.remove("hidden");
+        document.getElementById("loading").classList.add("hidden");
+        document.getElementById("tabRequests").classList.remove("hidden");
+
+        loadMe()
+            .then(d => {
+                const emptyProfile = !d.name;
+                const suggestion = d.first_name || "";
+                if (emptyProfile && suggestion) {
+                    document.getElementById("pName").value = suggestion;
+                }
+                // скрываем loading и показываем список
+                loadRequests();
+            })
+            .catch(e => {
+                if (e.code === 401) return showGate();
+            });
+    }
+
+    // чипы быстрых кнопок
+    (function buildChips() {
+        const wrap = document.getElementById("quickChips");
+        QUICK.forEach(q => {
+            const b = document.createElement("button");
+            b.textContent = q;
+            b.onclick = () => {
+                haptic("selectionChanged");
+                const prev = document.querySelectorAll(".chips button");
+                prev.forEach(x => x.classList.remove("active"));
+                if (q !== "✏️ Другое…") {
+                    document.getElementById("txtDesc").value = q.replace(/^\S+\s/, "");
+                    b.classList.add("active");
+                } else {
+                    document.getElementById("txtDesc").focus();
+                }
+            };
+            wrap.appendChild(b);
+        });
+    })();
+
+    document.getElementById("txtDesc").addEventListener("input", () => {
+        const esc = !!document.getElementById("txtDesc").value.trim() && WebApp && WebApp.enableClosingConfirmation;
+        try { if (esc) WebApp.enableClosingConfirmation(); else WebApp.disableClosingConfirmation(); } catch (e) {}
+    });
+
+    document.getElementById("filePhoto").addEventListener("change", e => {
+        const f = e.target.files[0];
+        const img = document.getElementById("photoPreview");
+        if (!f) { img.classList.add("hidden"); return; }
+        img.src = URL.createObjectURL(f);
+        img.classList.remove("hidden");
+    });
+
+    ready().then(boot);
+</script>
+</body>
+</html>

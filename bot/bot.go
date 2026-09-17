@@ -19,13 +19,10 @@ import (
 type sessionState string
 
 const (
-	stateIdle                sessionState = "idle"
-	stateAwaitingDescription sessionState = "awaiting_description"
-	stateAwaitingName        sessionState = "awaiting_name"
-	stateAwaitingSurname     sessionState = "awaiting_surname"
-	stateAwaitingClass       sessionState = "awaiting_class"
-	stateAwaitingPhoto       sessionState = "awaiting_photo"
-	stateAwaitingArchive     sessionState = "awaiting_archive"
+	stateIdle            sessionState = "idle"
+	stateAwaitingMedia   sessionState = "awaiting_media"
+	stateAwaitingClass   sessionState = "awaiting_class"
+	stateAwaitingArchive sessionState = "awaiting_archive"
 
 	stateBetaName    sessionState = "beta_name"
 	stateBetaSurname sessionState = "beta_surname"
@@ -35,10 +32,12 @@ const (
 
 type session struct {
 	state       sessionState
+	reqType     db.RequestType
 	description string
+	class       string
+	photo       *photoInfo
 	name        string
 	surname     string
-	class       string
 	reason      string
 }
 
@@ -68,9 +67,17 @@ func New(client *maxbot.Client, database *db.DB, cfg *config.Config) *Bot {
 	}
 }
 
-const menuText = "ПостоБот — заявки на замену или ремонт оборудования в школе 1409.\n\n" +
-	"Сообщи, что нужно заменить: бутылка воды, стул, монитор и всё остальное. " +
-	"Мы передадим заявку ответственному и уведомим тебя, когда будет выполнено."
+const menuText = "ПостоБот — сервис по приёму заявок и предложений по улучшению среды образовательного квартала 1409.\n\n" +
+	"📝 Заявка — быстрое реагирование на проблему (сломанный стул, разбитое окно, отсутствие воды).\n" +
+	"💡 Предложение — идея по улучшению школьной среды.\n\n" +
+	"Выбери, что нужно, — как только вопрос будет решён, пришлём уведомление."
+
+const requestIntro = "Вы можете оставить заявку — быстрое реагирование на проблему.\n\n" +
+	"Чаще всего просят: сломанный стул, разбитое окно, отсутствие воды.\n\n" +
+	"Обязательно прикрепите фотографию и оставьте комментарий."
+
+const proposalIntro = "Вы можете сформировать предложение по улучшению среды образовательного квартала 1409.\n\n" +
+	"Обязательно прикрепите фотографию и оставьте комментарий."
 
 func (b *Bot) Run(ctx context.Context) {
 	go func() {
@@ -226,14 +233,21 @@ func (b *Bot) handleCallback(ctx context.Context, u *schemes.MessageCallbackUpda
 	// Callbacks for students.
 	switch action {
 	case "new":
-		b.setSession(userID, &session{state: stateAwaitingDescription})
-		b.replyKeyboard(ctx, userID, 0,
-			"Что нужно заменить или починить? Напиши текстом или выбери кнопку ниже 👇",
-			b.quickButtons(
-				"💧 Бутылка воды", "🪑 Стул", "🖥 Монитор",
-				"💡 Лампочка", "🚰 Кран/раковина", "🚪 Дверь",
-				"🪟 Окно", "🛋 Диван", "✏️ Другое…",
-			))
+		b.setSession(userID, &session{reqType: db.TypeRequest, state: stateIdle})
+		b.replyKeyboard(ctx, userID, 0, requestIntro, b.mediaButtons())
+	case "proposal":
+		b.setSession(userID, &session{reqType: db.TypeProposal, state: stateIdle})
+		b.replyKeyboard(ctx, userID, 0, proposalIntro, b.mediaButtons())
+	case "media":
+		s := b.getSession(userID)
+		if s.reqType == "" {
+			s.reqType = db.TypeRequest
+		}
+		s.state = stateAwaitingMedia
+		b.reply(ctx, userID, 0, "Прикрепи фото и напиши комментарий — что именно нужно сделать 📸")
+	case "cancel":
+		b.setSession(userID, &session{state: stateIdle})
+		b.reply(ctx, userID, 0, "Отменено.")
 	case "mylist":
 		b.myRequests(ctx, userID)
 	case "archive":
@@ -270,18 +284,19 @@ func (b *Bot) studentMessage(ctx context.Context, userID int64, chatID int64, te
 
 	s := b.getSession(userID)
 
-	// Profanity guard on every free-text input, no matter the wizard step.
-	if text != "" && b.moderation.Check(text).HasMat {
-		b.reply(ctx, userID, chatID,
-			"В сообщении нецензурные выражения. Перепиши, пожалуйста, без мата 🙏")
-		return
-	}
-
-	// Spam-word guard.
-	if text != "" && b.moderation.Check(text).HasSpam {
-		b.reply(ctx, userID, chatID,
-			"Это сообщение распознано как спам. Если это ошибка — напиши иначе.")
-		return
+	// Profanity and spam guard on every free-text input, no matter the wizard step.
+	if text != "" {
+		mod := b.moderation.Check(text)
+		if mod.HasMat {
+			b.reply(ctx, userID, chatID,
+				"В сообщении нецензурные выражения. Перепиши, пожалуйста, без мата 🙏")
+			return
+		}
+		if mod.HasSpam {
+			b.reply(ctx, userID, chatID,
+				"Это сообщение распознано как спам. Если это ошибка — напиши иначе.")
+			return
+		}
 	}
 
 	// Any free text from an idle student that mentions a month is treated as an archive query.
@@ -291,65 +306,69 @@ func (b *Bot) studentMessage(ctx context.Context, userID int64, chatID int64, te
 	}
 
 	switch s.state {
-	case stateIdle, stateAwaitingDescription:
-		if text == "" {
-			b.reply(ctx, userID, chatID,
-				"Что нужно заменить или починить? Напиши текстом или выбери кнопку ниже 👇")
+	case stateIdle:
+		if text == "" && len(photos) == 0 {
+			b.reply(ctx, userID, chatID, "Выбери, что нужно: 📝 Заявка или 💡 Предложение 👇")
+			b.sendMenu(ctx, userID)
 			return
 		}
-		s.description = text
-		s.state = stateAwaitingName
-		b.reply(ctx, userID, chatID, "Как тебя зовут? Напиши, пожалуйста, имя.")
-
-	case stateAwaitingName:
-		if text == "" {
+		// Plain text or photo at idle starts a request without asking for a menu tap.
+		if s.reqType == "" {
+			s.reqType = db.TypeRequest
+		}
+		s.state = stateAwaitingMedia
+		fallthrough
+	case stateAwaitingMedia:
+		if len(photos) > 0 {
+			p := photos[0]
+			if p.Token == "" && p.Url == "" {
+				b.reply(ctx, userID, chatID, "Не удалось получить фото. Пришли фотографию ещё раз.")
+				return
+			}
+			s.photo = &p
+		}
+		if text != "" {
+			s.description = text
+		}
+		if s.description == "" {
+			b.reply(ctx, userID, chatID, "Напиши комментарий — что именно нужно сделать 📝")
 			return
 		}
-		s.name = text
-		s.state = stateAwaitingSurname
-		b.reply(ctx, userID, chatID,
-			fmt.Sprintf("Приятно познакомиться, %s! А какая у тебя фамилия?", s.name))
-
-	case stateAwaitingSurname:
-		if text == "" {
+		if s.photo == nil {
+			b.reply(ctx, userID, chatID, "Прикрепи фото 📸 — без фото заявку не примем.")
 			return
 		}
-		s.surname = text
 		s.state = stateAwaitingClass
-		b.reply(ctx, userID, chatID, "Теперь класс. Например: 9А.")
+		b.reply(ctx, userID, chatID, "Из какого ты класса? Например: 9А.")
 
 	case stateAwaitingClass:
 		if text == "" {
+			b.reply(ctx, userID, chatID, "Напиши класс текстом. Например: 9А.")
 			return
 		}
 		s.class = text
-		s.state = stateAwaitingPhoto
-		b.reply(ctx, userID, chatID,
-			"Отлично! Почти готово. Пришли фото того, что нужно заменить. Без фото заявку не примем 📸")
-
-	case stateAwaitingPhoto:
-		if len(photos) == 0 {
-			b.reply(ctx, userID, chatID, "Фото обязательно. Пришли фотографию проблемного предмета.")
-			return
-		}
-		if photos[0].Token == "" && photos[0].Url == "" {
-			b.reply(ctx, userID, chatID, "Не удалось получить фото. Пришли фотографию ещё раз.")
-			return
-		}
-		b.submitRequest(ctx, student, s, photos[0])
+		b.submitRequest(ctx, student, s)
 
 	case stateAwaitingArchive:
 		b.archiveQuery(ctx, userID, student, text)
 	}
 }
 
-func (b *Bot) submitRequest(ctx context.Context, student *db.Student, s *session, photo photoInfo) {
-	if err := b.database.UpdateStudentProfile(ctx, student.ID, s.name, s.surname, s.class); err != nil {
-		log.Printf("UpdateStudentProfile: %v", err)
+func (b *Bot) submitRequest(ctx context.Context, student *db.Student, s *session) {
+	reqType := s.reqType
+	if reqType == "" {
+		reqType = db.TypeRequest
 	}
+
+	if err := b.database.UpdateStudentClass(ctx, student.ID, s.class); err != nil {
+		log.Printf("UpdateStudentClass: %v", err)
+	}
+
+	photo := *s.photo
 
 	req := &db.Request{
 		StudentID:   student.ID,
+		Type:        reqType,
 		Description: s.description,
 		Normalized:  moderation.Normalize(s.description),
 		PhotoToken:  photo.Token,
@@ -365,7 +384,13 @@ func (b *Bot) submitRequest(ctx context.Context, student *db.Student, s *session
 		if err := b.database.CreateRequest(ctx, req); err != nil {
 			log.Printf("CreateRequest rejected: %v", err)
 		}
-		b.reply(ctx, student.MaxUserID, 0, "Заявка отклонена: сообщение содержит недопустимые выражения. Перепиши по-нормальному.")
+		if req.Type == db.TypeProposal {
+			b.reply(ctx, student.MaxUserID, 0,
+				"Предложение отклонено: сообщение содержит недопустимые выражения. Перепиши по-нормальному.")
+		} else {
+			b.reply(ctx, student.MaxUserID, 0,
+				"Заявка отклонена: сообщение содержит недопустимые выражения. Перепиши по-нормальному.")
+		}
 		return
 	}
 
@@ -375,7 +400,11 @@ func (b *Bot) submitRequest(ctx context.Context, student *db.Student, s *session
 		if err := b.database.CreateRequest(ctx, req); err != nil {
 			log.Printf("CreateRequest rejected spam: %v", err)
 		}
-		b.reply(ctx, student.MaxUserID, 0, "Заявка отклонена: сообщение распознано как спам.")
+		if req.Type == db.TypeProposal {
+			b.reply(ctx, student.MaxUserID, 0, "Предложение отклонено: сообщение распознано как спам.")
+		} else {
+			b.reply(ctx, student.MaxUserID, 0, "Заявка отклонена: сообщение распознано как спам.")
+		}
 		return
 	}
 
@@ -390,7 +419,13 @@ func (b *Bot) submitRequest(ctx context.Context, student *db.Student, s *session
 		if err := b.database.CreateRequest(ctx, req); err != nil {
 			log.Printf("CreateRequest duplicate: %v", err)
 		}
-		b.reply(ctx, student.MaxUserID, 0, "Похожая заявка уже отправлена и принята в работу. Дубликат не нужен.")
+		if req.Type == db.TypeProposal {
+			b.reply(ctx, student.MaxUserID, 0,
+				"Похожее предложение уже отправлено и принято в работу. Дубликат не нужен.")
+		} else {
+			b.reply(ctx, student.MaxUserID, 0,
+				"Похожая заявка уже отправлена и принята в работу. Дубликат не нужен.")
+		}
 		return
 	}
 
@@ -401,9 +436,17 @@ func (b *Bot) submitRequest(ctx context.Context, student *db.Student, s *session
 		return
 	}
 
-	b.reply(ctx, student.MaxUserID, 0,
-		fmt.Sprintf("✅ Заявка №%d принята!\n👤 Кто запросил: %s %s (%s класс)\n🔧 Проблема: %s",
-			req.ID, s.name, s.surname, s.class, s.description))
+	if req.Type == db.TypeProposal {
+		b.replyKeyboard(ctx, student.MaxUserID, 0,
+			fmt.Sprintf("✅ Предложение №%d принято!\n👤 Класс: %s\n💡 Идея: %s",
+				req.ID, s.class, s.description),
+			b.doneButtons())
+	} else {
+		b.replyKeyboard(ctx, student.MaxUserID, 0,
+			fmt.Sprintf("✅ Заявка №%d принята!\n👤 Класс: %s\n🔧 Проблема: %s",
+				req.ID, s.class, s.description),
+			b.doneButtons())
+	}
 
 	b.notifyResponsible(ctx, req)
 
@@ -454,6 +497,13 @@ func (b *Bot) requestButtons(reqID uint) *maxbot.Keyboard {
 	return kb
 }
 
+func typeNoun(t db.RequestType) string {
+	if t == db.TypeProposal {
+		return "предложение"
+	}
+	return "заявка"
+}
+
 func formatRequest(r *db.Request) string {
 	status := "в работе"
 	if r.Status == db.StatusDone {
@@ -463,9 +513,13 @@ func formatRequest(r *db.Request) string {
 	if r.PhotoURL != "" {
 		photo = "приложено"
 	}
+	kind := "🧾 Заявка №%d"
+	if r.Type == db.TypeProposal {
+		kind = "💡 Предложение №%d"
+	}
 	return fmt.Sprintf(
-		"🧾 Заявка №%d\n👤 Кто запросил: %s %s (%s класс)\n🔧 Проблема: %s\n📸 Фото: %s\nСтатус: %s",
-		r.ID, r.Student.Name, r.Student.Surname, r.Student.Class, r.Description, photo, status)
+		kind+"\n👤 Кто: %s класс\n%s: %s\n📸 Фото: %s\nСтатус: %s",
+		r.ID, r.Student.Class, typeNoun(r.Type), r.Description, photo, status)
 }
 
 // adminCommand handles responsible person commands.
@@ -490,8 +544,12 @@ func (b *Bot) sendResponsibleList(ctx context.Context, userID, chatID int64) {
 
 	msg := "Единый список заявок (по важности):\n\n"
 	for _, r := range requests {
-		msg += fmt.Sprintf("#%d • приоритет %d • %s %s • %s\n",
-			r.ID, r.Priority, r.Student.Name, r.Student.Surname, r.Description)
+		icon := "🧾"
+		if r.Type == db.TypeProposal {
+			icon = "💡"
+		}
+		msg += fmt.Sprintf("%s #%d • приоритет %d • %s класс • %s\n",
+			icon, r.ID, r.Priority, r.Student.Class, r.Description)
 	}
 	b.reply(ctx, userID, chatID, msg)
 }
@@ -521,7 +579,7 @@ func (b *Bot) responsibleAction(ctx context.Context, _ int64, callbackID, action
 
 			// Notify the student.
 			b.reply(ctx, req.Student.MaxUserID, 0,
-				fmt.Sprintf("✅ Твоя заявка #%d выполнена: %s", req.ID, req.Description))
+				fmt.Sprintf("✅ Выполнено #%d: %s", req.ID, req.Description))
 		}
 		return
 
@@ -565,9 +623,13 @@ func (b *Bot) myRequests(ctx context.Context, userID int64) {
 		return
 	}
 
-	msg := "Твои заявки:\n\n"
+	msg := "Твои заявки и предложения:\n\n"
 	for _, r := range requests {
-		msg += fmt.Sprintf("#%d • %s • %s\n", r.ID, statusLabel(r.Status), r.Description)
+		icon := "🧾"
+		if r.Type == db.TypeProposal {
+			icon = "💡"
+		}
+		msg += fmt.Sprintf("%s #%d • %s • %s\n", icon, r.ID, statusLabel(r.Status), r.Description)
 	}
 	b.reply(ctx, userID, 0, msg)
 }
@@ -588,10 +650,11 @@ func statusLabel(s db.RequestStatus) string {
 func (b *Bot) sendMenu(ctx context.Context, userID int64) {
 	kb := b.client.NewKeyboard()
 	row := kb.AddRow()
-	row.AddCallback("📝 Новая заявка", schemes.DEFAULT, "new")
-	row.AddCallback("📋 Мои заявки", schemes.DEFAULT, "mylist")
+	row.AddCallback("📝 Заявка", schemes.DEFAULT, "new")
+	row.AddCallback("💡 Предложение", schemes.DEFAULT, "proposal")
 
 	row2 := kb.AddRow()
+	row2.AddCallback("📋 Мои заявки", schemes.DEFAULT, "mylist")
 	row2.AddCallback("🗄 Архив", schemes.DEFAULT, "archive")
 
 	m := b.client.NewMessage().SetText(menuText).AddKeyboard(kb)
@@ -599,6 +662,24 @@ func (b *Bot) sendMenu(ctx context.Context, userID int64) {
 	if err := b.client.Send(ctx, m); err != nil {
 		log.Printf("sendMenu: %v", err)
 	}
+}
+
+// mediaButtons starts the media input of the request/proposal wizard.
+func (b *Bot) mediaButtons() *maxbot.Keyboard {
+	kb := b.client.NewKeyboard()
+	row := kb.AddRow()
+	row.AddCallback("📷 Фото и комментарий", schemes.DEFAULT, "media")
+	row.AddCallback("❌ Отмена", schemes.DEFAULT, "cancel")
+	return kb
+}
+
+// doneButtons offers the next steps after a request/proposal was submitted.
+func (b *Bot) doneButtons() *maxbot.Keyboard {
+	kb := b.client.NewKeyboard()
+	row := kb.AddRow()
+	row.AddCallback("📋 Мои заявки", schemes.DEFAULT, "mylist")
+	row.AddCallback("🗄 Архив", schemes.DEFAULT, "archive")
+	return kb
 }
 
 // --- helpers ---
@@ -641,21 +722,6 @@ func (b *Bot) replyKeyboard(ctx context.Context, userID, chatID int64, text stri
 	if err := b.client.Send(ctx, m); err != nil {
 		log.Printf("replyKeyboard to %d: %v", userID, err)
 	}
-}
-
-// quickButtons builds a keyboard of message-type buttons (up to 3 per row):
-// tapping one sends its text as a message to the bot.
-func (b *Bot) quickButtons(labels ...string) *maxbot.Keyboard {
-	kb := b.client.NewKeyboard()
-	var row = kb.AddRow()
-	perRow := 3
-	for i, label := range labels {
-		if i > 0 && i%perRow == 0 {
-			row = kb.AddRow()
-		}
-		row.AddMessage(label)
-	}
-	return kb
 }
 
 func (b *Bot) getSession(userID int64) *session {

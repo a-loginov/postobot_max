@@ -33,6 +33,12 @@ func (d *DB) UpdateStudentProfile(ctx context.Context, studentID uint, name, sur
 		Updates(map[string]any{"name": name, "surname": surname, "class": class}).Error
 }
 
+func (d *DB) UpdateStudentClass(ctx context.Context, studentID uint, class string) error {
+	return d.WithContext(ctx).Model(&Student{}).
+		Where("id = ?", studentID).
+		Update("class", class).Error
+}
+
 func (d *DB) GetStudentByID(ctx context.Context, id uint) (*Student, error) {
 	var s Student
 	if err := d.WithContext(ctx).First(&s, id).Error; err != nil {

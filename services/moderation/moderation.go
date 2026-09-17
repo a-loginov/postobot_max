@@ -111,8 +111,29 @@ func Normalize(text string) string {
 
 // IsSimilar reports whether candidate is a slight variation of existing
 // (same text, a few words added/moved/typos — token overlap >= threshold).
+// At least two shared words are required so short, terse comments
+// ("тест", "стул") are never flagged as duplicates.
 func (m *Moderation) IsSimilar(candidate, existing string) bool {
+	common := sharedCount(tokens(candidate), tokens(existing))
+	if common < 2 {
+		return false
+	}
 	return Similarity(candidate, existing) >= m.simThreshold
+}
+
+// sharedCount returns how many words a and b have in common.
+func sharedCount(a, b []string) int {
+	setB := make(map[string]bool, len(b))
+	for _, w := range b {
+		setB[w] = true
+	}
+	count := 0
+	for _, w := range a {
+		if setB[w] {
+			count++
+		}
+	}
+	return count
 }
 
 // Similarity returns a Dice coefficient on word tokens, in [0, 1].

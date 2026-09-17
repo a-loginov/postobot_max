@@ -46,6 +46,13 @@ type Student struct {
 	Requests []Request `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 }
 
+type RequestType string
+
+const (
+	TypeRequest  RequestType = "request"
+	TypeProposal RequestType = "proposal"
+)
+
 type RequestStatus string
 
 const (
@@ -59,6 +66,7 @@ type Request struct {
 	ID            uint          `gorm:"primarykey" json:"id"`
 	StudentID     uint          `gorm:"index" json:"student_id"`
 	Student       Student       `json:"student"`
+	Type          RequestType   `gorm:"index;default:request" json:"type"`
 	Description   string        `json:"description"`
 	Normalized    string        `gorm:"index" json:"-"`
 	PhotoToken    string        `json:"photo_token"`
